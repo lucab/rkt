@@ -454,6 +454,38 @@ func appToSystemd(p *stage1commontypes.Pod, ra *schema.RuntimeApp, interactive b
 		unit.NewUnitOption("Service", "SyslogIdentifier", appName.String()),
 	}
 
+	// Restrict access to some security-sensitive paths under /proc and /sys.
+	// Those entries can be hidden or just made read-only to app
+	restrictedPaths := []struct {
+		path         string
+		inaccessible bool
+		readonly     bool
+	}{
+		// ReadOnly entries
+		{"/proc/sys/kernel/core_pattern", false, true},
+		{"/proc/sys/kernel/modprobe", false, true},
+		{"/proc/sys/vm/panic_on_oom", false, true},
+		{"/proc/sysrq-trigger", false, true},
+		// Hidden entries
+		{"/proc/config.gz", true, false},
+		{"/proc/kallsyms", true, false},
+		{"/proc/sched_debug", true, false},
+		{"/proc/kcore", true, false},
+		{"/proc/kmem", true, false},
+		{"/proc/mem", true, false},
+	}
+
+	// Paths prefixed with "-" are ignored if they do not exist:
+	// [https://www.freedesktop.org/software/systemd/man/systemd.exec.html#ReadWriteDirectories=]
+	for _, p := range restrictedPaths {
+		if p.inaccessible {
+			// TODO(lucab): this needs support in systemd first
+			// opts = append(opts, unit.NewUnitOption("Service", "InaccessibleDirectories", fmt.Sprintf("-%s", p.path)))
+		} else if p.readonly {
+			opts = append(opts, unit.NewUnitOption("Service", "ReadOnlyDirectories", fmt.Sprintf("%s", p.path)))
+		}
+	}
+
 	if ra.ReadOnlyRootFS {
 		opts = append(opts, unit.NewUnitOption("Service", "ReadOnlyDirectories", common.RelAppRootfsPath(appName)))
 	}
