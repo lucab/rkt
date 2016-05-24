@@ -39,3 +39,22 @@ func TestMountNSApp(t *testing.T) {
 
 func TestSharedSlave(t *testing.T) {
 }
+
+// TestProcFSRestrictions checks that access to sensitive paths under
+// /proc and /sys is correctly restricted.
+func TestProcFSRestrictions(t *testing.T) {
+	ctx := testutils.NewRktRunCtx()
+	defer ctx.Cleanup()
+
+	for _, roEntry := range []string{
+		"/proc/sysrq-trigger",
+		"/proc/kcore",
+	} {
+		image := patchTestACI("rkt-inspect-stat-procfs.aci", fmt.Sprintf("--exec=/inspect --stat-file --file-name %s", roEntry))
+		defer os.Remove(image)
+		rktCmd := fmt.Sprintf("%s --insecure-options=image run %s", ctx.Cmd(), image)
+		expectedLine := fmt.Sprintf("%s: mode: ----------", roEntry)
+
+		runRktAndCheckOutput(t, rktCmd, expectedLine, false)
+	}
+}
