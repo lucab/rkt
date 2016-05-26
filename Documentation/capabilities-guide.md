@@ -1,4 +1,4 @@
-# Capabilities Isolator Guide
+# Capabilities Isolators Guide
 
 This document is a walk-through guide describing how to use rkt isolators for
 [Linux Capabilities](https://lwn.net/Kernel/Index/#Capabilities).
@@ -140,7 +140,6 @@ root
 / # ping -c 1 8.8.8.8
 PING 8.8.8.8 (8.8.8.8): 56 data bytes
 ping: permission denied (are you root?)
-
 ```
 
 This means that `CAP_NET_RAW` had been effectively disabled inside the container.
@@ -178,10 +177,11 @@ $ acbuild set-exec -- /bin/sh
 $ echo '{ "set": ["CAP_NET_RAW"] }' | acbuild isolator add "os/linux/capabilities-retain-set" -
 $ acbuild write caps-retain-set-example.aci
 $ acbuild end
-
 ```
+
 Once run, it can be easily verified that `ping` from inside the container is now
 functional:
+
 ```
 $ sudo rkt run --interactive --insecure-options=image caps-retain-set-example.aci 
 image: using image from file stage1-coreos.aci
@@ -222,14 +222,14 @@ chroot: can't change root directory to '/': Operation not permitted
 As with most security features, capability isolators may require some
 application-specific tuning in order to be maximally effective. For this reason,
 for security-sensitive environments it is recommended to have a well-specified
-set of requirements and follow best practices:
+set of capabilities requirements and follow best practices:
 
- 1) always follow the principle of least privilege and avoid running applications
-    as root, whenever possible
- 2) only grant the minimum set of capabilities needed by application, according 
-    to its typical usage
- 3) avoid granting overly generic capabilities. For example, `CAP_SYS_ADMIN` and
-    `CAP_SYS_PTRACE` are typically bad choices, as they open a large attack
-    surface.
- 4) prefer a blacklisting approach, trying to keep the "retain set" as small as
-    possible
+ 1. Always follow the principle of least privilege and, whenever possible,
+    avoid running applications as root
+ 2. Only grant the minimum set of capabilities needed by an application,
+    according to its typical usage
+ 3. Avoid granting overly generic capabilities. For example, `CAP_SYS_ADMIN` and
+    `CAP_SYS_PTRACE` are typically bad choices, as they open large attack
+    surfaces.
+ 4. Prefer a blacklisting approach, trying to keep the "retain-set" as small as
+    possible.
