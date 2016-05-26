@@ -98,12 +98,137 @@ operations but is known to never perform a `chroot(2)`, will have
 
 ## Usage Example
 
+The goal of these examples is to show how to build ACI images with acbuild,
+where some capabilities are either explicitly blocked or allowed.
+For simplicity, the starting point will be the official Alpine Linux image from
+CoreOS which ships with `ping` and `chroot` commands (from busybox). Those
+commands respectively requires `CAP_NET_RAW` and `CAP_SYS_CHROOT` capabilities
+in order to function properly. To block their usage, capabilities bounding set
+needs to be manipulated via `os/linux/capabilities-remove-set` or 
+`os/linux/capabilities-retain-set`; both approaches are shown here.
+
 ### Removing specific capabilities
+
+This example shows how to block `ping` only, by removing `CAP_NET_RAW` from 
+capability bounding set.
+
+First, a local image is built with an explicit "remove-set" isolator.
+This set contains the capabilities that need to be forbidden in order to block
+`ping` usage (and only that):
+
+```
+$ acbuild begin
+$ acbuild set-name localhost/caps-remove-set-example
+$ acbuild dependency add quay.io/coreos/alpine-sh
+$ acbuild set-exec -- /bin/sh
+$ echo '{ "set": ["CAP_NET_RAW"] }' | acbuild isolator add "os/linux/capabilities-remove-set" -
+$ acbuild write caps-remove-set-example.aci
+$ acbuild end
+```
+
+Once properly built, this image can be run in order to check that ping usage has
+been effectively disabled:
+```
+$ sudo rkt run --interactive --insecure-options=image caps-remove-set-example.aci 
+image: using image from file stage1-coreos.aci
+image: using image from file caps-remove-set-example.aci
+image: using image from local store for image name quay.io/coreos/alpine-sh
+
+/ # whoami
+root
+
+/ # ping -c 1 8.8.8.8
+PING 8.8.8.8 (8.8.8.8): 56 data bytes
+ping: permission denied (are you root?)
+
+```
+
+This means that `CAP_NET_RAW` had been effectively disabled inside the container.
+At the same time, `CAP_SYS_CHROOT` is still available in the default bounding
+set, so the `chroot` command will keep working:
+```
+$ sudo rkt run --interactive --insecure-options=image caps-remove-set-example.aci 
+image: using image from file stage1-coreos.aci
+image: using image from file caps-remove-set-example.aci
+image: using image from local store for image name quay.io/coreos/alpine-sh
+
+/ # whoami
+root
+
+/ # chroot /
+/ #  
+```
 
 ### Allowing specific capabilities
 
+Contrarily to the example above, this one shows how to allow `ping` only, by 
+removing all capabilities except `CAP_NET_RAW` from the bounding set.
+capability bounding set. This means that all other privileged operations,
+including `chroot` will be blocked.
 
+First, a local image is built with an explicit "retain-set" isolator.
+This set contains the capabilities that need to be enabled in order to allowed
+`ping` usage (and only that):
+
+```
+$ acbuild begin
+$ acbuild set-name localhost/caps-retain-set-example
+$ acbuild dependency add quay.io/coreos/alpine-sh
+$ acbuild set-exec -- /bin/sh
+$ echo '{ "set": ["CAP_NET_RAW"] }' | acbuild isolator add "os/linux/capabilities-retain-set" -
+$ acbuild write caps-retain-set-example.aci
+$ acbuild end
+
+```
+Once run, it can be easily verified that `ping` from inside the container is now
+functional:
+```
+$ sudo rkt run --interactive --insecure-options=image caps-retain-set-example.aci 
+image: using image from file stage1-coreos.aci
+image: using image from file caps-retain-set-example.aci
+image: using image from local store for image name quay.io/coreos/alpine-sh
+
+/ # whoami
+root
+
+/ # ping -c 1 8.8.8.8
+PING 8.8.8.8 (8.8.8.8): 56 data bytes
+64 bytes from 8.8.8.8: seq=0 ttl=41 time=24.910 ms
+
+--- 8.8.8.8 ping statistics ---
+1 packets transmitted, 1 packets received, 0% packet loss
+round-trip min/avg/max = 24.910/24.910/24.910 ms
+```
+
+However, all others capabilities are now not anymore available to the application.
+For example, using `chroot` is now resulting in a failure due to the missing
+ `CAP_SYS_CHROOT` capability:
+
+```
+$ sudo rkt run --interactive --insecure-options=image caps-remove-set-example.aci 
+image: using image from file stage1-coreos.aci
+image: using image from file caps-remove-set-example.aci
+image: using image from local store for image name quay.io/coreos/alpine-sh
+
+/ # whoami
+root
+
+/ # chroot /
+chroot: can't change root directory to '/': Operation not permitted
+```
 
 ## Recommendations
 
-
+As with most security features, capability isolators may require some
+application-specific tuning in order to be maximally effective. For this reason,
+for security-sensitive environments it is recommended to have a well-specified
+set of requirements and follow best practices:
+ 1) always follow the principle of least privilege and avoid running applications
+    as root, whenever possible
+ 2) only grant the minimum set of capabilities needed by application, according 
+    to its typical usage
+ 3) avoid granting overly generic capabilities. For example, `CAP_SYS_ADMIN` and
+    `CAP_SYS_PTRACE` are typically bad choices, as they open a large attack
+    surface.
+ 4) prefer a blacklisting approach, trying to keep the "retain set" as small as
+    possible
