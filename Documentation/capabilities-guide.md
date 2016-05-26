@@ -1,11 +1,11 @@
 # Capabilities Isolator Guide
 
-This guide will walk you through understanding and using rkt isolators for
+This document is a walk-through guide describing how to use rkt isolators for
 [Linux Capabilities](https://lwn.net/Kernel/Index/#Capabilities).
 
 * [About Linux Capabilities](#about-linux-capabilities)
 * [Default Capabilities](#default-capabilities)
-* [capability Isolators](#capability-isolators)
+* [Capability Isolators](#capability-isolators)
 * [Usage Example](#usage-example)
 * [Recommendations](#recommendations)
 
@@ -84,7 +84,7 @@ a privileged operation, will have `CAP_SYS_CHROOT` as the only entry in its
 
 ### Remove-set
 
-`os/linux/capabilities-remove-set` tackles capabilities in subtractive way: 
+`os/linux/capabilities-remove-set` tackles capabilities in a subtractive way: 
 starting from the default set of capabilities, single entries can be further
 forbidden in order to prevent specific actions.
 
@@ -104,13 +104,13 @@ For simplicity, the starting point will be the official Alpine Linux image from
 CoreOS which ships with `ping` and `chroot` commands (from busybox). Those
 commands respectively requires `CAP_NET_RAW` and `CAP_SYS_CHROOT` capabilities
 in order to function properly. To block their usage, capabilities bounding set
-needs to be manipulated via `os/linux/capabilities-remove-set` or 
+can be manipulated via `os/linux/capabilities-remove-set` or 
 `os/linux/capabilities-retain-set`; both approaches are shown here.
 
 ### Removing specific capabilities
 
 This example shows how to block `ping` only, by removing `CAP_NET_RAW` from 
-capability bounding set.
+capabilities bounding set.
 
 First, a local image is built with an explicit "remove-set" isolator.
 This set contains the capabilities that need to be forbidden in order to block
@@ -126,7 +126,7 @@ $ acbuild write caps-remove-set-example.aci
 $ acbuild end
 ```
 
-Once properly built, this image can be run in order to check that ping usage has
+Once properly built, this image can be run in order to check that `ping` usage has
 been effectively disabled:
 ```
 $ sudo rkt run --interactive --insecure-options=image caps-remove-set-example.aci 
@@ -163,8 +163,8 @@ root
 
 Contrarily to the example above, this one shows how to allow `ping` only, by 
 removing all capabilities except `CAP_NET_RAW` from the bounding set.
-capability bounding set. This means that all other privileged operations,
-including `chroot` will be blocked.
+This means that all other privileged operations, including `chroot` will be
+blocked.
 
 First, a local image is built with an explicit "retain-set" isolator.
 This set contains the capabilities that need to be enabled in order to allowed
@@ -201,7 +201,7 @@ round-trip min/avg/max = 24.910/24.910/24.910 ms
 ```
 
 However, all others capabilities are now not anymore available to the application.
-For example, using `chroot` is now resulting in a failure due to the missing
+For example, using `chroot` will now result in a failure due to the missing
  `CAP_SYS_CHROOT` capability:
 
 ```
@@ -223,6 +223,7 @@ As with most security features, capability isolators may require some
 application-specific tuning in order to be maximally effective. For this reason,
 for security-sensitive environments it is recommended to have a well-specified
 set of requirements and follow best practices:
+
  1) always follow the principle of least privilege and avoid running applications
     as root, whenever possible
  2) only grant the minimum set of capabilities needed by application, according 
