@@ -79,6 +79,9 @@ lib64/libseccomp.so.2
 lib64/libseccomp.so.2.3.0
 lib64/libselinux.so
 lib64/libselinux.so.1
+lib64/libsystemd.so
+lib64/libsystemd.so.0
+lib64/libsystemd.so.0.16.0
 lib64/libuuid.so
 lib64/libuuid.so.1
 lib64/libuuid.so.1.3.0
