@@ -232,6 +232,29 @@ func AddApp(cfg AddConfig) error {
 		ra.App.UserLabels = app.UserLabels
 	}
 
+	// set mode for I/O streams
+	if app.Stdin == "" {
+		app.Stdin = "null"
+	}
+	if app.Stdout == "" {
+		app.Stdout = "log"
+	}
+	if app.Stderr == "" {
+		app.Stderr = "log"
+	}
+	// TODO(lucab): stabilize and document the annotations
+	ra.Annotations.Set("coreos.com/rkt/stage2/stdin", app.Stdin)
+	ra.Annotations.Set("coreos.com/rkt/stage2/stdout", app.Stdout)
+	ra.Annotations.Set("coreos.com/rkt/stage2/stderr", app.Stderr)
+
+	// Add internal annotations for rkt experiments
+	for k, v := range cfg.Annotations {
+		if _, ok := pm.Annotations.Get(k.String()); ok {
+			continue
+		}
+		pm.Annotations.Set(k, v)
+	}
+
 	if app.Environments != nil {
 		envs := make([]string, 0, len(app.Environments))
 		for name, value := range app.Environments {

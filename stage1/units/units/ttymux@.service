@@ -1,0 +1,15 @@
+[Unit]
+Description=TTY handler for %i
+DefaultDependencies=false
+OnFailureJobMode=fail
+
+[Service]
+Type=notify
+Restart=no
+EnvironmentFile=/rkt/iottymux/%i/env
+ExecStart=/iottymux --action=ttymux
+User=0
+Group=0
+SyslogIdentifier=%i
+StandardOutput=journal+console
+StandardError=journal+console

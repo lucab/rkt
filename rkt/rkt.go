@@ -22,6 +22,7 @@ import (
 	"runtime/pprof"
 	"text/tabwriter"
 
+	"github.com/appc/spec/schema/types"
 	"github.com/coreos/rkt/common"
 	"github.com/coreos/rkt/pkg/keystore"
 	"github.com/coreos/rkt/pkg/log"
@@ -388,4 +389,26 @@ func getConfig() (*config.Config, error) {
 
 func lockDir() string {
 	return filepath.Join(getDataDir(), "locks")
+}
+
+// getRktEnvExperiments returns annotations for rkt experimental/hidden
+// features
+func getRktEnvExperiments(annotations map[types.ACIdentifier]string) map[types.ACIdentifier]string {
+	tabularEnvToAnnotation := map[string]types.ACIdentifier{
+		"RKT_EXPERIMENT_DEBUG":   "coreos.com/rkt/experiment/debug",
+		"RKT_EXPERIMENT_LOGMODE": "coreos.com/rkt/experiment/logmode",
+	}
+
+	for k, v := range tabularEnvToAnnotation {
+		envVal := os.Getenv(k)
+		_, ok := annotations[v]
+		if ok {
+			continue
+		}
+		if envVal == "" {
+			continue
+		}
+		annotations[v] = envVal
+	}
+	return annotations
 }

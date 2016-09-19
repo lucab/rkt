@@ -794,3 +794,72 @@ func (au *appSupplementaryGIDs) String() string {
 func (au *appSupplementaryGIDs) Type() string {
 	return "appSupplementaryGIDs"
 }
+
+type appStdin apps.Apps
+
+func (au *appStdin) Set(s string) error {
+	app := (*apps.Apps)(au).Last()
+	if app == nil {
+		return fmt.Errorf("--stdin must follow an application")
+	}
+	app.Stdin = s
+	return nil
+}
+
+func (au *appStdin) String() string {
+	app := (*apps.Apps)(au).Last()
+	if app == nil {
+		return ""
+	}
+	return app.Stdin
+}
+
+func (au *appStdin) Type() string {
+	return "appStdin"
+}
+
+type appStdout apps.Apps
+
+func (au *appStdout) Set(s string) error {
+	app := (*apps.Apps)(au).Last()
+	if app == nil {
+		return fmt.Errorf("--stdout must follow an application")
+	}
+	app.Stdout = s
+	return nil
+}
+
+func (au *appStdout) String() string {
+	app := (*apps.Apps)(au).Last()
+	if app == nil {
+		return ""
+	}
+	return app.Stdout
+}
+
+func (au *appStdout) Type() string {
+	return "appStdout"
+}
+
+type appStderr apps.Apps
+
+func (au *appStderr) Set(s string) error {
+	app := (*apps.Apps)(au).Last()
+	if app == nil {
+		return fmt.Errorf("--stderr must follow an application")
+	}
+	app.Stderr = s
+	return nil
+}
+
+func (au *appStderr) String() string {
+	app := (*apps.Apps)(au).Last()
+	if app == nil {
+		return ""
+	}
+	return app.Stderr
+}
+
+func (au *appStderr) Type() string {
+	return "appStderr"
+}

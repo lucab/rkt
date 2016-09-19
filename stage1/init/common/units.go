@@ -158,14 +158,7 @@ func ImmutableEnv(p *stage1commontypes.Pod, interactive bool, privateUsers strin
 		}
 
 		var opts []*unit.UnitOption
-		if interactive {
-			opts = append(opts, unit.NewUnitOption("Service", "StandardInput", "tty"))
-			opts = append(opts, unit.NewUnitOption("Service", "StandardOutput", "tty"))
-			opts = append(opts, unit.NewUnitOption("Service", "StandardError", "tty"))
-		} else {
-			opts = append(opts, unit.NewUnitOption("Service", "StandardOutput", "journal+console"))
-			opts = append(opts, unit.NewUnitOption("Service", "StandardError", "journal+console"))
-		}
+		opts = w.SetupAppIO(p, ra, binPath, interactive, opts)
 		w.AppUnit(ra, binPath, privateUsers, insecureOptions, opts...)
 
 		w.AppReaperUnit(ra.Name, binPath,
@@ -175,6 +168,103 @@ func ImmutableEnv(p *stage1commontypes.Pod, interactive bool, privateUsers strin
 	}
 
 	return w.Error()
+}
+
+func (w *UnitWriter) SetupAppIO(p *stage1commontypes.Pod, ra *schema.RuntimeApp, binPath string, interactive bool, opts []*unit.UnitOption) []*unit.UnitOption {
+	if interactive {
+		opts = append(opts, unit.NewUnitOption("Service", "StandardInput", "tty"))
+		opts = append(opts, unit.NewUnitOption("Service", "StandardOutput", "tty"))
+		opts = append(opts, unit.NewUnitOption("Service", "StandardError", "tty"))
+		return opts
+	}
+
+	var requiredStreams []string
+	needsIOMux := false
+	needsTTYMux := false
+	stdin, _ := ra.Annotations.Get("coreos.com/rkt/stage2/stdin")
+	stdout, _ := ra.Annotations.Get("coreos.com/rkt/stage2/stdout")
+	stderr, _ := ra.Annotations.Get("coreos.com/rkt/stage2/stderr")
+
+	if stdin == "stream" {
+		needsIOMux = true
+		w.AppSocketUnit(ra.Name, binPath, "stdin")
+		requiredStreams = append(requiredStreams, "STAGE2_STDIN=true")
+		opts = append(opts, unit.NewUnitOption("Service", "StandardInput", "fd"))
+		opts = append(opts, unit.NewUnitOption("Service", "Sockets", fmt.Sprintf("%s-%s.socket", ra.Name, "stdin")))
+	} else if stdin == "tty" {
+		needsTTYMux = true
+		requiredStreams = append(requiredStreams, "STAGE2_STDIN=true")
+		opts = append(opts, unit.NewUnitOption("Service", "StandardInput", "tty-force"))
+	} else {
+		opts = append(opts, unit.NewUnitOption("Service", "StandardInput", "null"))
+	}
+
+	if stdout == "stream" {
+		needsIOMux = true
+		w.AppSocketUnit(ra.Name, binPath, "stdout")
+		requiredStreams = append(requiredStreams, "STAGE2_STDOUT=true")
+		opts = append(opts, unit.NewUnitOption("Service", "StandardOutput", "fd"))
+		opts = append(opts, unit.NewUnitOption("Service", "Sockets", fmt.Sprintf("%s-%s.socket", ra.Name, "stdout")))
+	} else if stdout == "tty" {
+		needsTTYMux = true
+		requiredStreams = append(requiredStreams, "STAGE2_STDOUT=true")
+		opts = append(opts, unit.NewUnitOption("Service", "StandardOutput", "tty"))
+	} else if stdout == "null" {
+		opts = append(opts, unit.NewUnitOption("Service", "StandardOutput", "null"))
+	} else {
+		opts = append(opts, unit.NewUnitOption("Service", "StandardOutput", "journal+console"))
+	}
+
+	if stderr == "stream" {
+		needsIOMux = true
+		w.AppSocketUnit(ra.Name, binPath, "stderr")
+		requiredStreams = append(requiredStreams, "STAGE2_STDERR=true")
+		opts = append(opts, unit.NewUnitOption("Service", "StandardError", "fd"))
+		opts = append(opts, unit.NewUnitOption("Service", "Sockets", fmt.Sprintf("%s-%s.socket", ra.Name, "stderr")))
+	} else if stderr == "tty" {
+		needsTTYMux = true
+		requiredStreams = append(requiredStreams, "STAGE2_STDERR=true")
+		opts = append(opts, unit.NewUnitOption("Service", "StandardError", "tty"))
+	} else if stderr == "null" {
+		opts = append(opts, unit.NewUnitOption("Service", "StandardError", "null"))
+	} else {
+		opts = append(opts, unit.NewUnitOption("Service", "StandardError", "journal+console"))
+	}
+
+	if needsIOMux || needsTTYMux {
+		appIODir := IOMuxDir(p.Root, ra.Name)
+		os.MkdirAll(appIODir, 0644)
+		file, err := os.OpenFile(filepath.Join(appIODir, "env"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		if err != nil {
+			w.err = err
+			return nil
+		}
+		defer file.Close()
+		for _, l := range requiredStreams {
+			file.WriteString(l + "\n")
+		}
+		file.WriteString(fmt.Sprintf("STAGE2_APPNAME=%s\n", ra.Name))
+		stage1Debug, ok := p.Manifest.Annotations.Get("coreos.com/rkt/experiment/debug")
+		if ok {
+			file.WriteString(fmt.Sprintf("STAGE1_DEBUG=%s\n", stage1Debug))
+		}
+
+		if needsIOMux {
+			file.WriteString("STAGE2_TTY=false\n")
+			opts = append(opts, unit.NewUnitOption("Unit", "Requires", fmt.Sprintf("iomux@%s.service", ra.Name)))
+			opts = append(opts, unit.NewUnitOption("Unit", "Before", fmt.Sprintf("iomux@%s.service", ra.Name)))
+			logMode, ok := p.Manifest.Annotations.Get("coreos.com/rkt/experiment/logmode")
+			if ok {
+				file.WriteString(fmt.Sprintf("STAGE1_LOGMODE=%s\n", logMode))
+			}
+		} else if needsTTYMux {
+			file.WriteString("STAGE2_TTY=true\n")
+			opts = append(opts, unit.NewUnitOption("Service", "TTYPath", filepath.Join("/rkt/iottymux", ra.Name.String(), "tty")))
+			opts = append(opts, unit.NewUnitOption("Unit", "Requires", fmt.Sprintf("ttymux@%s.service", ra.Name)))
+			opts = append(opts, unit.NewUnitOption("Unit", "After", fmt.Sprintf("ttymux@%s.service", ra.Name)))
+		}
+	}
+	return opts
 }
 
 // UnitWriter is the type that writes systemd units preserving the first previously occured error.
@@ -630,6 +720,28 @@ func (uw *UnitWriter) AppReaperUnit(appName types.ACName, binPath string, opts .
 	uw.WriteUnit(
 		ServiceUnitPath(uw.p.Root, types.ACName(fmt.Sprintf("reaper-%s", appName))),
 		fmt.Sprintf("failed to write app %q reaper service", appName),
+		opts...,
+	)
+}
+
+// AppSocketUnits writes all socket units for the given app in the given path.
+func (uw *UnitWriter) AppSocketUnit(appName types.ACName, binPath string, streamName string, opts ...*unit.UnitOption) {
+	opts = append(opts, []*unit.UnitOption{
+		unit.NewUnitOption("Unit", "Description", fmt.Sprintf("%s socket for %s", streamName, appName)),
+		unit.NewUnitOption("Unit", "DefaultDependencies", "no"),
+		unit.NewUnitOption("Unit", "StopWhenUnneeded", "yes"),
+		unit.NewUnitOption("Unit", "RefuseManualStart", "yes"),
+		unit.NewUnitOption("Unit", "RefuseManualStop", "yes"),
+		unit.NewUnitOption("Unit", "BindsTo", fmt.Sprintf("%s.service", appName)),
+		unit.NewUnitOption("Socket", "RemoveOnStop", "yes"),
+		unit.NewUnitOption("Socket", "Service", fmt.Sprintf("%s.service", appName)),
+		unit.NewUnitOption("Socket", "FileDescriptorName", streamName),
+		unit.NewUnitOption("Socket", "ListenFIFO", filepath.Join("/rkt/iottymux", appName.String(), "stage2-"+streamName)),
+	}...)
+
+	uw.WriteUnit(
+		TypedUnitPath(uw.p.Root, appName.String()+"-"+streamName, "socket"),
+		fmt.Sprintf("failed to write %s socket for %q service", streamName, appName),
 		opts...,
 	)
 }

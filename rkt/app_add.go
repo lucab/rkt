@@ -25,6 +25,7 @@ import (
 	"github.com/coreos/rkt/store/imagestore"
 	"github.com/coreos/rkt/store/treestore"
 
+	"github.com/appc/spec/schema/types"
 	"github.com/spf13/cobra"
 )
 
@@ -113,11 +114,15 @@ func runAppAdd(cmd *cobra.Command, args []string) (exit int) {
 		return 1
 	}
 
+	annos := make(map[types.ACIdentifier]string)
+	annos = getRktEnvExperiments(annos)
+
 	ccfg := stage0.CommonConfig{
-		Store:     s,
-		TreeStore: ts,
-		UUID:      p.UUID,
-		Debug:     globalFlags.Debug,
+		Store:       s,
+		TreeStore:   ts,
+		UUID:        p.UUID,
+		Debug:       globalFlags.Debug,
+		Annotations: annos,
 	}
 
 	rktgid, err := common.LookupGid(common.RktGroup)

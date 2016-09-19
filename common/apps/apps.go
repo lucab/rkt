@@ -66,6 +66,9 @@ type App struct {
 	UserAnnotations   map[string]string                 // the user annotations of the app.
 	UserLabels        map[string]string                 // the user labels of the app.
 	Environments      map[string]string                 // the environments of the app.
+	Stdin             string                            // mode for stdin
+	Stdout            string                            // mode for stdout
+	Stderr            string                            // mode for stderr
 
 	// TODO(jonboulle): These images are partially-populated hashes, this should be clarified.
 	ImageID types.Hash // resolved image identifier
