@@ -1,0 +1,15 @@
+[Unit]
+Description=I/O and TTY handler for %i
+DefaultDependencies=false
+OnFailureJobMode=fail
+
+[Service]
+Type=notify
+Restart=no
+Environment="RKT_APPNAME=%i"
+ExecStart=/iottymux
+User=0
+Group=0
+SyslogIdentifier=%i
+StandardOutput=journal+console
+StandardError=journal+console
