@@ -93,16 +93,17 @@ type RunConfig struct {
 
 // CommonConfig defines the configuration shared by both Run and Prepare
 type CommonConfig struct {
-	Store        *imagestore.Store // store containing all of the configured application images
-	TreeStore    *treestore.Store  // store containing all of the configured application images
-	Stage1Image  types.Hash        // stage1 image containing usable /init and /enter entrypoints
-	UUID         *types.UUID       // UUID of the pod
-	RootHash     string            // Hash of the root filesystem
-	ManifestData string            // The pod manifest data
-	Debug        bool
-	MountLabel   string // selinux label to use for fs
-	ProcessLabel string // selinux label to use
-	Mutable      bool   // whether this pod is mutable
+	Store        *imagestore.Store             // store containing all of the configured application images
+	TreeStore    *treestore.Store              // store containing all of the configured application images
+	Stage1Image  types.Hash                    // stage1 image containing usable /init and /enter entrypoints
+	UUID         *types.UUID                   // UUID of the pod
+	RootHash     string                        // hash of the root filesystem
+	ManifestData string                        // the pod manifest data
+	Debug        bool                          // debug mode
+	MountLabel   string                        // SELinux label to use for fs
+	ProcessLabel string                        // SELinux label to use
+	Mutable      bool                          // whether this pod is mutable
+	Annotations  map[types.ACIdentifier]string // pod-level annotations, for internal/experimental usage
 }
 
 // HostsEntries encapsulates the entries in an etc-hosts file: mapping from IP
@@ -264,6 +265,21 @@ func generatePodManifest(cfg PrepareConfig, dir string) ([]byte, error) {
 			mergeEnvs(&ra.App.Environment, os.Environ(), false)
 		}
 
+		// set mode for I/O streams
+		if app.Stdin == "" {
+			app.Stdin = "null"
+		}
+		if app.Stdout == "" {
+			app.Stdout = "log"
+		}
+		if app.Stderr == "" {
+			app.Stderr = "log"
+		}
+		// TODO(lucab): stabilize and document the annotations
+		ra.Annotations.Set("coreos.com/rkt/stage2/stdin", app.Stdin)
+		ra.Annotations.Set("coreos.com/rkt/stage2/stdout", app.Stdout)
+		ra.Annotations.Set("coreos.com/rkt/stage2/stderr", app.Stderr)
+
 		mergeEnvs(&ra.App.Environment, cfg.EnvFromFile, true)
 		mergeEnvs(&ra.App.Environment, cfg.ExplicitEnv, true)
 		pm.Apps = append(pm.Apps, ra)
@@ -282,6 +298,14 @@ func generatePodManifest(cfg PrepareConfig, dir string) ([]byte, error) {
 		Name:  "coreos.com/rkt/stage1/mutable",
 		Value: strconv.FormatBool(cfg.Mutable),
 	})
+
+	// Add internal annotations for rkt experiments
+	for k, v := range cfg.Annotations {
+		if _, ok := pm.Annotations.Get(k.String()); ok {
+			continue
+		}
+		pm.Annotations.Set(k, v)
+	}
 
 	pmb, err := json.Marshal(pm)
 	if err != nil {

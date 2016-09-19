@@ -255,8 +255,8 @@ func callEntrypoint(dir, entrypoint string, args []string) error {
 		return fmt.Errorf("%q not implemented for pod's stage1: %v", entrypoint, err)
 	}
 	execArgs := []string{filepath.Join(common.Stage1RootfsPath(dir), ep)}
-	debug("Execing %s", ep)
 	execArgs = append(execArgs, args...)
+	debug("Execing %v", execArgs)
 
 	c := exec.Cmd{
 		Path:   execArgs[0],
@@ -266,7 +266,7 @@ func callEntrypoint(dir, entrypoint string, args []string) error {
 	}
 
 	if err := c.Run(); err != nil {
-		return fmt.Errorf("error executing stage1's app rm: %v", err)
+		return fmt.Errorf("error executing stage1 entrypoint: %v", err)
 	}
 
 	if err := os.Chdir(previousDir); err != nil {

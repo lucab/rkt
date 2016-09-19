@@ -57,6 +57,9 @@ type App struct {
 	CapsRetain    *types.LinuxCapabilitiesRetainSet // os/linux/capabilities-retain-set overrides
 	CapsRemove    *types.LinuxCapabilitiesRevokeSet // os/linux/capabilities-remove-set overrides
 	SeccompFilter string                            // seccomp CLI overrides
+	Stdin         string                            // mode for stdin
+	Stdout        string                            // mode for stdout
+	Stderr        string                            // mode for stderr
 
 	// TODO(jonboulle): These images are partially-populated hashes, this should be clarified.
 	ImageID types.Hash // resolved image identifier

@@ -440,3 +440,75 @@ func (au *appSeccompFilter) String() string {
 func (au *appSeccompFilter) Type() string {
 	return "appSeccompFilter"
 }
+
+// appStdin is for --stdin flags in the form of: --stdin=mode
+type appStdin apps.Apps
+
+func (au *appStdin) Set(s string) error {
+	app := (*apps.Apps)(au).Last()
+	if app == nil {
+		return fmt.Errorf("--stdin must follow an image")
+	}
+	app.Stdin = s
+	return nil
+}
+
+func (au *appStdin) String() string {
+	app := (*apps.Apps)(au).Last()
+	if app == nil {
+		return ""
+	}
+	return app.Stdin
+}
+
+func (au *appStdin) Type() string {
+	return "appStdin"
+}
+
+// appStdout is for --stdout flags in the form of: --stdout=mode
+type appStdout apps.Apps
+
+func (au *appStdout) Set(s string) error {
+	app := (*apps.Apps)(au).Last()
+	if app == nil {
+		return fmt.Errorf("--stdout must follow an image")
+	}
+	app.Stdout = s
+	return nil
+}
+
+func (au *appStdout) String() string {
+	app := (*apps.Apps)(au).Last()
+	if app == nil {
+		return ""
+	}
+	return app.Stdout
+}
+
+func (au *appStdout) Type() string {
+	return "appStdout"
+}
+
+// appStderr is for --stderr flags in the form of: --stderr=mode
+type appStderr apps.Apps
+
+func (au *appStderr) Set(s string) error {
+	app := (*apps.Apps)(au).Last()
+	if app == nil {
+		return fmt.Errorf("--stderr must follow an image")
+	}
+	app.Stderr = s
+	return nil
+}
+
+func (au *appStderr) String() string {
+	app := (*apps.Apps)(au).Last()
+	if app == nil {
+		return ""
+	}
+	return app.Stderr
+}
+
+func (au *appStderr) Type() string {
+	return "appStderr"
+}

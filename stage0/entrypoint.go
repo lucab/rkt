@@ -28,10 +28,11 @@ import (
 )
 
 const (
-	enterEntrypoint = "coreos.com/rkt/stage1/enter"
-	runEntrypoint   = "coreos.com/rkt/stage1/run"
-	gcEntrypoint    = "coreos.com/rkt/stage1/gc"
-	stopEntrypoint  = "coreos.com/rkt/stage1/stop"
+	enterEntrypoint  = "coreos.com/rkt/stage1/enter"
+	runEntrypoint    = "coreos.com/rkt/stage1/run"
+	gcEntrypoint     = "coreos.com/rkt/stage1/gc"
+	stopEntrypoint   = "coreos.com/rkt/stage1/stop"
+	attachEntrypoint = "coreos.com/rkt/stage1/attach"
 
 	appRmEntrypoint    = "coreos.com/rkt/stage1/app/rm"
 	appStartEntrypoint = "coreos.com/rkt/stage1/app/start"
