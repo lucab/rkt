@@ -602,10 +602,23 @@ func appToSystemd(p *stage1commontypes.Pod, ra *schema.RuntimeApp, interactive b
 		opts = append(opts, unit.NewUnitOption("Service", "StandardInput", "tty"))
 		opts = append(opts, unit.NewUnitOption("Service", "StandardOutput", "tty"))
 		opts = append(opts, unit.NewUnitOption("Service", "StandardError", "tty"))
-	} else {
-		opts = append(opts, unit.NewUnitOption("Service", "StandardOutput", "journal+console"))
-		opts = append(opts, unit.NewUnitOption("Service", "StandardError", "journal+console"))
+	} else /* if has_tty*/ {
+		opts = append(opts, unit.NewUnitOption("Unit", "Requires", fmt.Sprintf("iottymux@%s.service", appName)))
+		opts = append(opts, unit.NewUnitOption("Unit", "After", fmt.Sprintf("iottymux@%s.service", appName)))
+		opts = append(opts, unit.NewUnitOption("Service", "TTYPath", "/rkt/tty/"+appName.String()))
+		opts = append(opts, unit.NewUnitOption("Service", "StandardInput", "tty-force"))
+		opts = append(opts, unit.NewUnitOption("Service", "StandardOutput", "tty"))
+		opts = append(opts, unit.NewUnitOption("Service", "StandardError", "tty"))
 	}
+	/* else if has_streams {
+			opts = append(opts, unit.NewUnitOption("Service", "StandardInput", "named-descriptor"))
+			opts = append(opts, unit.NewUnitOption("Service", "StandardOutput", "named-descriptor"))
+			opts = append(opts, unit.NewUnitOption("Service", "StandardError", "named-descriptor"))
+	  } else {
+			opts = append(opts, unit.NewUnitOption("Service", "StandardOutput", "journal+console"))
+			opts = append(opts, unit.NewUnitOption("Service", "StandardError", "journal+console"))
+	  }
+	*/
 
 	// When an app fails, we shut down the pod
 	opts = append(opts, unit.NewUnitOption("Unit", "OnFailure", "halt.target"))
