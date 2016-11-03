@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//+build linux
-
 package main
 
 import (
@@ -22,35 +20,37 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
-	//	"path/filepath"
-
-	//	"github.com/coreos/rkt/common"
-	rktlog "github.com/coreos/rkt/pkg/log"
-	stage1initcommon "github.com/coreos/rkt/stage1/init/common"
 
 	"github.com/appc/spec/schema/types"
+	rktlog "github.com/coreos/rkt/pkg/log"
+	stage1initcommon "github.com/coreos/rkt/stage1/init/common"
 )
 
 var (
-	app          string
-	action       string
-	attachTTY    string
-	attachStdin  string
-	attachStdout string
-	attachStderr string
-	debug        bool
-	log          *rktlog.Logger
-	diag         *rktlog.Logger
+	log  *rktlog.Logger
+	diag *rktlog.Logger
+
+	app    string
+	action string
+	debug  bool
+
+	attachTTYIn  bool
+	attachTTYOut bool
+	attachStdin  bool
+	attachStdout bool
+	attachStderr bool
 )
 
 func init() {
-	flag.BoolVar(&debug, "debug", false, "Run in debug mode")
 	flag.StringVar(&action, "action", "list", "Action")
 	flag.StringVar(&app, "app", "", "Application name")
-	flag.StringVar(&attachTTY, "tty", "false", "attach tty")
-	flag.StringVar(&attachStdin, "stdin", "true", "attach stdin")
-	flag.StringVar(&attachStdout, "stdout", "true", "attach stdin")
-	flag.StringVar(&attachStderr, "stderr", "false", "attach tty")
+	flag.BoolVar(&debug, "debug", false, "Run in debug mode")
+
+	flag.BoolVar(&attachTTYIn, "tty-in", false, "attach tty input")
+	flag.BoolVar(&attachTTYOut, "tty-out", false, "attach tty output")
+	flag.BoolVar(&attachStdin, "stdin", false, "attach stdin")
+	flag.BoolVar(&attachStdout, "stdout", false, "attach stdin")
+	flag.BoolVar(&attachStderr, "stderr", false, "attach tty")
 }
 
 func main() {
@@ -65,19 +65,21 @@ func main() {
 
 	appName, err := types.NewACName(app)
 	if err != nil {
-		log.PrintE("invalid app name", err)
+		log.PrintE("invalid application name", err)
 		os.Exit(254)
 	}
 
-	var args []string
-	enterCmd := os.Getenv("RKT_STAGE1_ENTERCMD")
-	enterPID := os.Getenv("RKT_STAGE1_ENTERPID")
-	if enterCmd != "" {
-		args = append(args, []string{enterCmd, fmt.Sprintf("--pid=%s", enterPID), "--"}...)
+	if action != "list" && action != "auto-attach" && action != "custom-attach" {
+		log.Printf("invalid attach action %q", action)
+		os.Exit(254)
 	}
 
-	args = append(args, "/iottymux")
-	args = append(args, fmt.Sprintf("--action=%s", action))
+	args := prepareEnterCmd()
+	args = append(args, []string{
+		"/iottymux",
+		fmt.Sprintf("--action=%s", action),
+		fmt.Sprintf("--app=%s", appName),
+	}...)
 
 	cmd := exec.Cmd{
 		Path:   args[0],
@@ -86,11 +88,12 @@ func main() {
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
 		Env: []string{
-			fmt.Sprintf("STAGE2_APPNAME=%s", appName),
-			fmt.Sprintf("STAGE2_TTY=%s", attachTTY),
-			fmt.Sprintf("STAGE2_STDIN=%s", attachStdin),
-			fmt.Sprintf("STAGE2_STDOUT=%s", attachStdout),
-			fmt.Sprintf("STAGE2_STDERR=%s", attachStderr),
+			fmt.Sprintf("STAGE2_DEBUG=%t", debug),
+			fmt.Sprintf("STAGE2_ATTACH_TTYIN=%t", attachTTYIn),
+			fmt.Sprintf("STAGE2_ATTACH_TTYOUT=%t", attachTTYOut),
+			fmt.Sprintf("STAGE2_ATTACH_STDIN=%t", attachStdin),
+			fmt.Sprintf("STAGE2_ATTACH_STDOUT=%t", attachStdout),
+			fmt.Sprintf("STAGE2_ATTACH_STDERR=%t", attachStderr),
 		},
 	}
 
@@ -100,4 +103,19 @@ func main() {
 	}
 
 	os.Exit(0)
+}
+
+func prepareEnterCmd() []string {
+	var args []string
+	enterCmd := os.Getenv("RKT_STAGE1_ENTERCMD")
+	enterPID := os.Getenv("RKT_STAGE1_ENTERPID")
+	if enterCmd != "" && enterPID != "" {
+		args = append(args, []string{enterCmd, fmt.Sprintf("--pid=%s", enterPID)}...)
+		enterApp := os.Getenv("RKT_STAGE1_ENTERAPP")
+		if enterApp != "" {
+			args = append(args, fmt.Sprintf("--app=%s", enterApp))
+		}
+		args = append(args, "--")
+	}
+	return args
 }

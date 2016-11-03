@@ -19,6 +19,7 @@ package main
 import (
 	"bufio"
 	"flag"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
@@ -26,28 +27,27 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	rktlog "github.com/coreos/rkt/pkg/log"
 	stage1initcommon "github.com/coreos/rkt/stage1/init/common"
 
-	"fmt"
 	"github.com/appc/spec/schema/types"
 	"github.com/coreos/go-systemd/daemon"
 	"github.com/kr/pty"
-	"syscall"
-	"time"
 )
 
 var (
-	action     string
+	log     *rktlog.Logger
+	diag    *rktlog.Logger
+	action  string
+	appName string
+	debug   bool
+
 	stdinMode  string
 	stdoutMode string
 	stderrMode string
-	appName    string
-
-	debug bool
-	log   *rktlog.Logger
-	diag  *rktlog.Logger
 )
 
 const (
@@ -56,6 +56,7 @@ const (
 
 func init() {
 	flag.StringVar(&action, "action", "list", "Sub-action to perform")
+	flag.StringVar(&appName, "app", "", "Target application name")
 }
 
 type Endpoint struct {
@@ -64,6 +65,7 @@ type Endpoint struct {
 	Protocol string `json:"protocol"`
 	Address  string `json:"address"`
 	Port     string `json:"port"`
+	Flavor   string `json:"flavor"`
 }
 
 func main() {
@@ -74,45 +76,38 @@ func main() {
 		debug = true
 	}
 	stage1initcommon.InitDebug(debug)
-	log, diag, _ = rktlog.NewLogSet("stage1-iottymux", debug)
+	log, diag, _ = rktlog.NewLogSet("iottymux", debug)
 	if !debug {
 		diag.SetOutput(ioutil.Discard)
 	}
 
 	// Validate app name
-	appName = os.Getenv("STAGE2_APPNAME")
-	if appName == "" {
-		log.Print("empty app name")
-		os.Exit(254)
-	}
 	_, err = types.NewACName(appName)
 	if err != nil {
 		log.Printf("invalid app name (%s): %v", appName, err)
 		os.Exit(254)
 	}
 
+	var r error
 	switch action {
-	case "attach":
-		statusFile, e := os.OpenFile(filepath.Join(pathPrefix, appName, "endpoints"), os.O_RDONLY, os.ModePerm)
-		if e != nil {
-			err = e
-			break
-		}
-		err = actionAttach(statusFile)
+	case "auto-attach":
+		r = actionAttach(true)
+	case "custom-attach":
+		r = actionAttach(false)
 	case "iomux":
 		statusFile, e := os.OpenFile(filepath.Join(pathPrefix, appName, "endpoints"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.ModePerm)
 		if e != nil {
 			err = e
 			break
 		}
-		err = actionIOMux(statusFile)
+		r = actionIOMux(statusFile)
 	case "ttymux":
 		statusFile, e := os.OpenFile(filepath.Join(pathPrefix, appName, "endpoints"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.ModePerm)
 		if e != nil {
 			err = e
 			break
 		}
-		err = actionTTYMux(statusFile)
+		r = actionTTYMux(statusFile)
 	case "list":
 		fallthrough
 	default:
@@ -121,20 +116,41 @@ func main() {
 			err = e
 			break
 		}
-		err = actionPrint(statusFile, os.Stdout)
+		r = actionPrint(statusFile, os.Stdout)
 
 	}
 
-	if err != nil {
-		log.PrintE("runtime failure", err)
+	if r != nil {
+		log.PrintE("runtime failure", r)
 		os.Exit(254)
 	}
 	os.Exit(0)
 }
 
-func actionAttach(in io.Reader) error {
-	c := make(chan int)
-	eps := getEndpoints(in)
+func actionAttach(autoMode bool) error {
+	// retrieve available endpoints
+	statusFile, err := os.OpenFile(filepath.Join(pathPrefix, appName, "endpoints"), os.O_RDONLY, os.ModePerm)
+	if err != nil {
+		return err
+	}
+	eps, err := getEndpoints(statusFile)
+	_ = statusFile.Close()
+	if err != nil {
+		return err
+	}
+
+	// retrieve custom attach mode
+	var withTTYIn, withTTYOut string
+	var withStdin, withStdout, withStderr string
+	if !autoMode {
+		withTTYIn = os.Getenv("STAGE2_ATTACH_TTYIN")
+		withTTYOut = os.Getenv("STAGE2_ATTACH_TTYOUT")
+		withStdin = os.Getenv("STAGE2_ATTACH_STDIN")
+		withStdout = os.Getenv("STAGE2_ATTACH_STDOUT")
+		withStderr = os.Getenv("STAGE2_ATTACH_STDERR")
+	}
+
+	ec := make(chan error)
 	for s, p := range eps {
 		conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%s", p))
 		if err != nil {
@@ -142,21 +158,30 @@ func actionAttach(in io.Reader) error {
 		}
 		switch s {
 		case "stdin", "tty-in":
-			go io.Copy(conn, os.Stdin)
+			if autoMode || withTTYIn == "true" || withStdin == "true" {
+				go io.Copy(conn, os.Stdin)
+			}
 		case "stdout", "tty-out":
-			go io.Copy(os.Stdout, conn)
+			if autoMode || withTTYOut == "true" || withStdout == "true" {
+				go io.Copy(os.Stdout, conn)
+			}
 		case "stderr":
-			go io.Copy(os.Stderr, conn)
+			if autoMode || withStderr == "true" {
+				go io.Copy(os.Stderr, conn)
+			}
 		case "tty":
-			go io.Copy(conn, os.Stdin)
-			go io.Copy(os.Stdout, conn)
+			if autoMode || withTTYIn == "true" {
+				go io.Copy(conn, os.Stdin)
+			}
+			if autoMode || withTTYOut == "true" {
+				go io.Copy(os.Stdout, conn)
+			}
 		}
 	}
-	<-c
-	return nil
+	return <-ec
 }
 
-func getEndpoints(in io.Reader) map[string]string {
+func getEndpoints(in io.Reader) (map[string]string, error) {
 	eps := make(map[string]string)
 	r := bufio.NewReader(in)
 	for {
@@ -171,11 +196,15 @@ func getEndpoints(in io.Reader) map[string]string {
 			break
 		}
 	}
-	return eps
+	return eps, nil
 }
 
 func actionPrint(in io.Reader, out io.Writer) error {
-	eps := getEndpoints(in)
+	eps, err := getEndpoints(in)
+	if err != nil {
+		return err
+	}
+
 	for s, p := range eps {
 		out.Write([]byte(fmt.Sprintf("%s available on port %s\n", s, p)))
 	}
@@ -183,8 +212,8 @@ func actionPrint(in io.Reader, out io.Writer) error {
 }
 
 func actionTTYMux(statusFile *os.File) error {
-	c := make(chan int)
-	diag.Print("Opening TTY")
+	// Create a PTY pair and bind-mount the pts to `/rkt/iottymux/<app>/tty`.
+	// Once ready, it will be used by systemd unit.
 	pty, tty, err := pty.Open()
 	if err != nil {
 		return err
@@ -200,14 +229,13 @@ func actionTTYMux(statusFile *os.File) error {
 	if err != nil {
 		return err
 	}
+
+	// signal to systemd that PTY is ready and application can start
 	ok, err := daemon.SdNotify("READY=1")
 	if !ok {
 		return fmt.Errorf("failure during startup notification: %v", err)
 	}
 	diag.Print("TTY handler ready")
-
-	var endpoints = make([]*net.Listener, 3)
-	var fifos = make([]*os.File, 3)
 
 	ttyMode := ""
 	if os.Getenv("STAGE2_STDIN") == "true" {
@@ -222,6 +250,8 @@ func actionTTYMux(statusFile *os.File) error {
 
 	}
 	// Open FIFOs
+	var endpoints = make([]*net.Listener, 3)
+	var fifos = make([]*os.File, 3)
 	if strings.Contains(ttyMode, "tty") {
 		fifos[0] = pty
 		l, err := net.Listen("tcp4", "127.0.0.1:0")
@@ -240,13 +270,13 @@ func actionTTYMux(statusFile *os.File) error {
 		statusFile.Close()
 
 	}
+	c := make(chan error)
 	if fifos[0] != nil && endpoints[0] != nil {
 		clients := make(chan *net.Conn)
 		go acceptConn(endpoints[0], clients, "tty")
 		go proxyIO(clients, fifos[0])
 	}
-	<-c
-	return err
+	return <-c
 }
 
 func actionIOMux(statusFile *os.File) error {
@@ -255,7 +285,6 @@ func actionIOMux(statusFile *os.File) error {
 	var fifos = make([]*os.File, 3)
 
 	logMode := os.Getenv("STAGE1_LOGMODE")
-	//	logTarget := os.Getenv("STAGE1_LOGTARGET")
 	stdinMode = os.Getenv("STAGE2_STDIN")
 	stdoutMode = os.Getenv("STAGE2_STDOUT")
 	stderrMode = os.Getenv("STAGE2_STDERR")

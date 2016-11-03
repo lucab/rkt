@@ -7,7 +7,7 @@ OnFailureJobMode=fail
 Type=simple
 Restart=no
 EnvironmentFile=/rkt/iottymux/%i/env
-ExecStart=/iottymux --action=iomux
+ExecStart=/iottymux --action=iomux --app=%i
 User=0
 Group=0
 SyslogIdentifier=%i

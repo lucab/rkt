@@ -1,4 +1,4 @@
-// Copyright 2014 The rkt Authors
+// Copyright 2016 The rkt Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,20 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//+build linux
-
 package main
 
 import (
 	"fmt"
 	"strings"
 
-	//	"github.com/appc/spec/schema/types"
+	"github.com/coreos/rkt/common"
 	pkgPod "github.com/coreos/rkt/pkg/pod"
 	"github.com/coreos/rkt/stage0"
 	"github.com/coreos/rkt/store/imagestore"
 	"github.com/coreos/rkt/store/treestore"
-	//	"github.com/hashicorp/errwrap"
 	"github.com/spf13/cobra"
 )
 
@@ -41,14 +38,11 @@ var (
 )
 
 func init() {
-	cmdRkt.AddCommand(cmdAttach)
-	cmdAttach.Flags().StringVar(&flagAppName, "app", "", "name of the app to enter within the specified pod")
-	cmdAttach.Flags().StringVar(&flagAttachMode, "mode", "list", "attach mode")
-
-	// Disable interspersed flags to stop parsing after the first non flag
-	// argument. This is need to permit to correctly handle
-	// multiple "IMAGE -- imageargs ---"  options
-	cmdAttach.Flags().SetInterspersed(false)
+	if common.IsExperimentEnabled("attach") {
+		cmdRkt.AddCommand(cmdAttach)
+		cmdAttach.Flags().StringVar(&flagAppName, "app", "", "name of the app to enter within the specified pod")
+		cmdAttach.Flags().StringVar(&flagAttachMode, "mode", "list", "attach mode")
+	}
 }
 
 func runAttach(cmd *cobra.Command, args []string) (exit int) {
@@ -101,47 +95,86 @@ func runAttach(cmd *cobra.Command, args []string) (exit int) {
 	}
 
 	stage1RootFS := ts.GetRootFS(stage1TreeStoreID)
-
-	attachTTY := false
-	attachStdin := false
-	attachStdout := false
-	attachStderr := false
-	muxAction := "list"
-	if flagAttachMode != "list" {
-		muxAction = "attach"
-	} else {
-		if flagAttachMode == "auto" {
-		}
-		if strings.Contains(flagAttachMode, "stdin") {
-			attachStdin = true
-		}
-		if strings.Contains(flagAttachMode, "stdout") {
-			attachStdout = true
-		}
-		if strings.Contains(flagAttachMode, "stderr") {
-			attachStderr = true
-		}
-		if strings.Contains(flagAttachMode, "tty") {
-			attachTTY = true
-			attachStdin = false
-			attachStdout = false
-			attachStderr = false
-		}
+	attachArgs, err := parseAttachMode(appName.String(), globalFlags.Debug, flagAttachMode)
+	if err != nil {
+		stderr.PrintE("invalid attach mode", err)
+		return 254
 	}
 
-	argv := []string{
-		fmt.Sprintf("--action=%s", muxAction),
-		fmt.Sprintf("--app=%s", appName.String()),
-		fmt.Sprintf("--tty=%t", attachTTY),
-		fmt.Sprintf("--stdin=%t", attachStdin),
-		fmt.Sprintf("--stdout=%t", attachStdout),
-		fmt.Sprintf("--stderr=%t", attachStderr),
-	}
-
-	if err = stage0.Attach(p.Path(), podPID, *appName, stage1RootFS, uuid, argv); err != nil {
+	if err = stage0.Attach(p.Path(), podPID, *appName, stage1RootFS, uuid, attachArgs); err != nil {
 		stderr.PrintE("enter failed", err)
 		return 254
 	}
 	// not reached when stage0.Attach execs /enter
 	return 0
+}
+
+// parseAttachMode parses a stage0 CLI "--mode" and returns options suited
+// for stage1/attach entrypoint invocation
+func parseAttachMode(appName string, debug bool, attachMode string) ([]string, error) {
+	attachArgs := []string{
+		fmt.Sprintf("--app=%s", appName),
+		fmt.Sprintf("--debug=%t", debug),
+	}
+
+	// list mode: just print endpoints
+	if attachMode == "list" || attachMode == "" {
+		attachArgs = append(attachArgs, "--action=list")
+		return attachArgs, nil
+	}
+
+	// auto-attach mode: stage1-attach will figure out endpoints
+	if attachMode == "auto" {
+		attachArgs = append(attachArgs, "--action=auto-attach")
+		return attachArgs, nil
+	}
+
+	// custom-attach mode: user specified channels
+	attachArgs = append(attachArgs, "--action=custom-attach")
+
+	// check for tty-attaching modes
+	attachTTYIn := false
+	attachTTYOut := false
+	if attachMode == "tty" {
+		attachTTYIn = true
+		attachTTYOut = true
+	}
+	if strings.Contains(attachMode, "tty-in") {
+		attachTTYIn = true
+	}
+	if strings.Contains(attachMode, "tty-out") {
+		attachTTYOut = true
+	}
+
+	// check for stream-attaching modes
+	attachStdin := false
+	attachStdout := false
+	attachStderr := false
+	if strings.Contains(attachMode, "stdin") {
+		attachStdin = true
+	}
+	if strings.Contains(attachMode, "stdout") {
+		attachStdout = true
+	}
+	if strings.Contains(attachMode, "stderr") {
+		attachStderr = true
+	}
+
+	// check that the resulting attach mode is sane
+	if !(attachTTYIn || attachTTYOut || attachStdin || attachStdout || attachStderr) {
+		return nil, fmt.Errorf("mode must specify at least one endpoint to attach")
+	}
+	if (attachTTYIn || attachTTYOut) && (attachStdin || attachStdout || attachStderr) {
+		return nil, fmt.Errorf("incompatibles endpoints %q", attachMode)
+	}
+
+	attachArgs = append(attachArgs, []string{
+		fmt.Sprintf("--tty-in=%t", attachTTYIn),
+		fmt.Sprintf("--tty-out=%t", attachTTYOut),
+		fmt.Sprintf("--stdin=%t", attachStdin),
+		fmt.Sprintf("--stdout=%t", attachStdout),
+		fmt.Sprintf("--stderr=%t", attachStderr),
+	}...)
+	return attachArgs, nil
+
 }

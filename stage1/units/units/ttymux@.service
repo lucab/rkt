@@ -7,7 +7,7 @@ OnFailureJobMode=fail
 Type=notify
 Restart=no
 EnvironmentFile=/rkt/iottymux/%i/env
-ExecStart=/iottymux --action=ttymux
+ExecStart=/iottymux --action=ttymux --app=%i
 User=0
 Group=0
 SyslogIdentifier=%i

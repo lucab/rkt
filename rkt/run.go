@@ -109,9 +109,14 @@ func addAppFlags(cmd *cobra.Command) {
 	cmd.Flags().Var((*appAnnotation)(&rktApps), "user-annotation", "set the app's annotations (example: '--user-annotation=foo=bar')")
 	cmd.Flags().Var((*appLabel)(&rktApps), "user-label", "set the app's labels (example: '--user-label=foo=bar')")
 	cmd.Flags().Var((*appEnv)(&rktApps), "environment", "set the app's environment variables (example: '--environment=foo=bar')")
-	cmd.Flags().Var((*appStdin)(&rktApps), "stdin", "stdin mode for the preceding image (example: '--stdin=null')")
-	cmd.Flags().Var((*appStdout)(&rktApps), "stdout", "stdout mode for the preceding image (example: '--stdout=log')")
-	cmd.Flags().Var((*appStderr)(&rktApps), "stderr", "stderr mode for the preceding image (example: '--stderr=log')")
+	if common.IsExperimentEnabled("attach") {
+		cmd.Flags().Var((*appStdin)(&rktApps), "stdin", "stdin mode for the preceding application (example: '--stdin=null')")
+		cmd.Flags().MarkHidden("stdin")
+		cmd.Flags().Var((*appStdout)(&rktApps), "stdout", "stdout mode for the preceding application (example: '--stdout=log')")
+		cmd.Flags().MarkHidden("stdout")
+		cmd.Flags().Var((*appStderr)(&rktApps), "stderr", "stderr mode for the preceding application (example: '--stderr=log')")
+		cmd.Flags().MarkHidden("stderr")
+	}
 }
 
 func init() {
