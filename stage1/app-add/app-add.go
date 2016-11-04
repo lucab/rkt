@@ -146,7 +146,7 @@ func main() {
 		unit.NewUnitOption("Unit", "Before", "halt.target"),
 		unit.NewUnitOption("Unit", "Conflicts", "halt.target"),
 	}
-	opts = w.SetupAppIO(p, ra, binPath, false, opts)
+	opts = w.SetupAppIO(p, ra, binPath, false, debug, opts)
 	w.AppUnit(ra, binPath, privateUsers, insecureOptions, opts...)
 
 	w.AppReaperUnit(ra.Name, binPath)

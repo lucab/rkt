@@ -87,7 +87,7 @@ func MutableEnv(p *stage1commontypes.Pod) error {
 	return w.Error()
 }
 
-func ImmutableEnv(p *stage1commontypes.Pod, interactive bool, privateUsers string, insecureOptions Stage1InsecureOptions) error {
+func ImmutableEnv(p *stage1commontypes.Pod, interactive bool, privateUsers string, insecureOptions Stage1InsecureOptions, debug bool) error {
 	w := NewUnitWriter(p)
 
 	opts := []*unit.UnitOption{
@@ -158,7 +158,7 @@ func ImmutableEnv(p *stage1commontypes.Pod, interactive bool, privateUsers strin
 		}
 
 		var opts []*unit.UnitOption
-		opts = w.SetupAppIO(p, ra, binPath, interactive, opts)
+		opts = w.SetupAppIO(p, ra, binPath, interactive, debug, opts)
 		w.AppUnit(ra, binPath, privateUsers, insecureOptions, opts...)
 
 		w.AppReaperUnit(ra.Name, binPath,
@@ -170,7 +170,7 @@ func ImmutableEnv(p *stage1commontypes.Pod, interactive bool, privateUsers strin
 	return w.Error()
 }
 
-func (w *UnitWriter) SetupAppIO(p *stage1commontypes.Pod, ra *schema.RuntimeApp, binPath string, interactive bool, opts []*unit.UnitOption) []*unit.UnitOption {
+func (w *UnitWriter) SetupAppIO(p *stage1commontypes.Pod, ra *schema.RuntimeApp, binPath string, interactive bool, debug bool, opts []*unit.UnitOption) []*unit.UnitOption {
 	if interactive {
 		opts = append(opts, unit.NewUnitOption("Service", "StandardInput", "tty"))
 		opts = append(opts, unit.NewUnitOption("Service", "StandardOutput", "tty"))
@@ -185,49 +185,64 @@ func (w *UnitWriter) SetupAppIO(p *stage1commontypes.Pod, ra *schema.RuntimeApp,
 	stdout, _ := ra.Annotations.Get("coreos.com/rkt/stage2/stdout")
 	stderr, _ := ra.Annotations.Get("coreos.com/rkt/stage2/stderr")
 
-	if stdin == "stream" {
+	switch stdin {
+	case "stream":
 		needsIOMux = true
 		w.AppSocketUnit(ra.Name, binPath, "stdin")
 		requiredStreams = append(requiredStreams, "STAGE2_STDIN=true")
 		opts = append(opts, unit.NewUnitOption("Service", "StandardInput", "fd"))
 		opts = append(opts, unit.NewUnitOption("Service", "Sockets", fmt.Sprintf("%s-%s.socket", ra.Name, "stdin")))
-	} else if stdin == "tty" {
+	case "tty":
 		needsTTYMux = true
 		requiredStreams = append(requiredStreams, "STAGE2_STDIN=true")
 		opts = append(opts, unit.NewUnitOption("Service", "StandardInput", "tty-force"))
-	} else {
+	case "interactive":
+		opts = append(opts, unit.NewUnitOption("Service", "StandardInput", "tty"))
+	case "null", "":
+		fallthrough
+	default:
 		opts = append(opts, unit.NewUnitOption("Service", "StandardInput", "null"))
 	}
 
-	if stdout == "stream" {
+	switch stdout {
+	case "stream":
 		needsIOMux = true
 		w.AppSocketUnit(ra.Name, binPath, "stdout")
 		requiredStreams = append(requiredStreams, "STAGE2_STDOUT=true")
 		opts = append(opts, unit.NewUnitOption("Service", "StandardOutput", "fd"))
 		opts = append(opts, unit.NewUnitOption("Service", "Sockets", fmt.Sprintf("%s-%s.socket", ra.Name, "stdout")))
-	} else if stdout == "tty" {
+	case "tty":
 		needsTTYMux = true
 		requiredStreams = append(requiredStreams, "STAGE2_STDOUT=true")
 		opts = append(opts, unit.NewUnitOption("Service", "StandardOutput", "tty"))
-	} else if stdout == "null" {
+	case "interactive":
+		opts = append(opts, unit.NewUnitOption("Service", "StandardOutput", "tty"))
+	case "null":
 		opts = append(opts, unit.NewUnitOption("Service", "StandardOutput", "null"))
-	} else {
+	case "log", "":
+		fallthrough
+	default:
 		opts = append(opts, unit.NewUnitOption("Service", "StandardOutput", "journal+console"))
 	}
 
-	if stderr == "stream" {
+	switch stderr {
+	case "stream":
 		needsIOMux = true
 		w.AppSocketUnit(ra.Name, binPath, "stderr")
 		requiredStreams = append(requiredStreams, "STAGE2_STDERR=true")
 		opts = append(opts, unit.NewUnitOption("Service", "StandardError", "fd"))
 		opts = append(opts, unit.NewUnitOption("Service", "Sockets", fmt.Sprintf("%s-%s.socket", ra.Name, "stderr")))
-	} else if stderr == "tty" {
+	case "tty":
 		needsTTYMux = true
 		requiredStreams = append(requiredStreams, "STAGE2_STDERR=true")
 		opts = append(opts, unit.NewUnitOption("Service", "StandardError", "tty"))
-	} else if stderr == "null" {
+	case "interactive":
+		opts = append(opts, unit.NewUnitOption("Service", "StandardError", "tty"))
+	case "null":
 		opts = append(opts, unit.NewUnitOption("Service", "StandardError", "null"))
-	} else {
+	case "log", "":
+		fallthrough
+	default:
 		opts = append(opts, unit.NewUnitOption("Service", "StandardError", "journal+console"))
 	}
 
@@ -243,11 +258,8 @@ func (w *UnitWriter) SetupAppIO(p *stage1commontypes.Pod, ra *schema.RuntimeApp,
 		for _, l := range requiredStreams {
 			file.WriteString(l + "\n")
 		}
-		file.WriteString(fmt.Sprintf("STAGE2_APPNAME=%s\n", ra.Name))
-		stage1Debug, ok := p.Manifest.Annotations.Get("coreos.com/rkt/experiment/debug")
-		if ok {
-			file.WriteString(fmt.Sprintf("STAGE1_DEBUG=%s\n", stage1Debug))
-		}
+
+		file.WriteString(fmt.Sprintf("STAGE1_DEBUG=%t\n", debug))
 
 		if needsIOMux {
 			file.WriteString("STAGE2_TTY=false\n")

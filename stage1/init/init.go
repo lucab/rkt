@@ -589,7 +589,7 @@ func stage1() int {
 			return 254
 		}
 	} else {
-		if err = stage1initcommon.ImmutableEnv(p, interactive, privateUsers, insecureOptions); err != nil {
+		if err = stage1initcommon.ImmutableEnv(p, interactive, privateUsers, insecureOptions, debug); err != nil {
 			log.Error(err)
 			return 254
 		}
