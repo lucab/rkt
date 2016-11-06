@@ -52,3 +52,20 @@ func WritePid(pid int, filename string) error {
 	}
 	return nil
 }
+
+// PrepareEnterCmd retrieves enter argument and prepare a command list
+// to further run a command in stage1 context
+func PrepareEnterCmd() []string {
+	var args []string
+	enterCmd := os.Getenv("RKT_STAGE1_ENTERCMD")
+	enterPID := os.Getenv("RKT_STAGE1_ENTERPID")
+	if enterCmd != "" && enterPID != "" {
+		args = append(args, []string{enterCmd, fmt.Sprintf("--pid=%s", enterPID)}...)
+		enterApp := os.Getenv("RKT_STAGE1_ENTERAPP")
+		if enterApp != "" {
+			args = append(args, fmt.Sprintf("--app=%s", enterApp))
+		}
+		args = append(args, "--")
+	}
+	return args
+}
