@@ -23,6 +23,7 @@ import (
 
 	"github.com/appc/spec/schema/types"
 	rktlog "github.com/coreos/rkt/pkg/log"
+	stage1common "github.com/coreos/rkt/stage1/common"
 	stage1initcommon "github.com/coreos/rkt/stage1/init/common"
 )
 
@@ -74,7 +75,7 @@ func main() {
 		os.Exit(254)
 	}
 
-	args := prepareEnterCmd()
+	args := stage1common.PrepareEnterCmd(false)
 	args = append(args, []string{
 		"/iottymux",
 		fmt.Sprintf("--action=%s", action),
@@ -103,19 +104,4 @@ func main() {
 	}
 
 	os.Exit(0)
-}
-
-func prepareEnterCmd() []string {
-	var args []string
-	enterCmd := os.Getenv("RKT_STAGE1_ENTERCMD")
-	enterPID := os.Getenv("RKT_STAGE1_ENTERPID")
-	if enterCmd != "" && enterPID != "" {
-		args = append(args, []string{enterCmd, fmt.Sprintf("--pid=%s", enterPID)}...)
-		enterApp := os.Getenv("RKT_STAGE1_ENTERAPP")
-		if enterApp != "" {
-			args = append(args, fmt.Sprintf("--app=%s", enterApp))
-		}
-		args = append(args, "--")
-	}
-	return args
 }

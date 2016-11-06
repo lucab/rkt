@@ -142,12 +142,12 @@ func main() {
 
 	w := stage1initcommon.NewUnitWriter(p)
 
-	opts := []*unit.UnitOption{
+	w.AppUnit(ra, binPath, privateUsers, insecureOptions,
 		unit.NewUnitOption("Unit", "Before", "halt.target"),
 		unit.NewUnitOption("Unit", "Conflicts", "halt.target"),
-	}
-	opts = w.SetupAppIO(p, ra, binPath, false, debug, opts)
-	w.AppUnit(ra, binPath, privateUsers, insecureOptions, opts...)
+		unit.NewUnitOption("Service", "StandardOutput", "journal+console"),
+		unit.NewUnitOption("Service", "StandardError", "journal+console"),
+	)
 
 	w.AppReaperUnit(ra.Name, binPath)
 
