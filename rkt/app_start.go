@@ -28,7 +28,7 @@ var (
 	cmdAppStart = &cobra.Command{
 		Use:   "start UUID --app=NAME",
 		Short: "Start an app in a pod",
-		Long:  `Start appz!`,
+		Long:  "This allows starting an existing application inside a mutable pod",
 		Run:   runWrapper(runAppStart),
 	}
 )

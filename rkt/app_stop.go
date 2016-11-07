@@ -28,7 +28,7 @@ var (
 	cmdAppStop = &cobra.Command{
 		Use:   "stop UUID --app=NAME",
 		Short: "Stop an app in a pod",
-		Long:  `Stop appz!`,
+		Long:  "This allows stopping an application running inside a mutable pod",
 		Run:   runWrapper(runAppStop),
 	}
 )
